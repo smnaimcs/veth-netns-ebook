@@ -1,0 +1,2114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Virtual Ethernet & Linux Network Namespaces — A Practical Systems Guide</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,300;0,400;0,600;0,700;1,400&family=Syne:wght@400;600;700;800&family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+
+<style>
+:root {
+  --bg: #0b0e17;
+  --bg2: #111520;
+  --bg3: #161b2e;
+  --surface: #1a2035;
+  --surface2: #1f2844;
+  --border: #2a3556;
+  --border2: #3a4870;
+  --accent: #4f9cf9;
+  --accent2: #7eb8ff;
+  --accent3: #00d9a3;
+  --accent4: #f97316;
+  --text: #e2e8f7;
+  --text2: #a8b8d8;
+  --text3: #6b7fa8;
+  --code-bg: #0d1117;
+  --code-border: #21294a;
+  --highlight: #ffd166;
+  --sidebar-w: 300px;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  font-family: 'Libre Baskerville', Georgia, serif;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 17px;
+  line-height: 1.75;
+  display: flex;
+  min-height: 100vh;
+}
+
+/* ─── SIDEBAR ─────────────────────────────────────────────── */
+#sidebar {
+  position: fixed;
+  top: 0; left: 0;
+  width: var(--sidebar-w);
+  height: 100vh;
+  background: var(--bg2);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  z-index: 100;
+  transition: transform 0.35s cubic-bezier(0.4,0,0.2,1);
+}
+
+.sidebar-header {
+  padding: 28px 24px 20px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.sidebar-logo {
+  font-family: 'Syne', sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--accent3);
+  margin-bottom: 8px;
+}
+
+.sidebar-title {
+  font-family: 'Syne', sans-serif;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.3;
+}
+
+.sidebar-sub {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--text3);
+  margin-top: 4px;
+  letter-spacing: 0.08em;
+}
+
+.sidebar-search {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.sidebar-search input {
+  width: 100%;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 12px;
+  color: var(--text);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+.sidebar-search input::placeholder { color: var(--text3); }
+.sidebar-search input:focus { border-color: var(--accent); }
+
+.sidebar-nav {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 0 24px;
+}
+
+.sidebar-nav::-webkit-scrollbar { width: 4px; }
+.sidebar-nav::-webkit-scrollbar-track { background: transparent; }
+.sidebar-nav::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+.nav-section-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--text3);
+  padding: 16px 20px 6px;
+}
+
+.nav-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 20px;
+  cursor: pointer;
+  transition: background 0.15s;
+  text-decoration: none;
+  border-left: 3px solid transparent;
+}
+
+.nav-item:hover {
+  background: var(--surface);
+}
+
+.nav-item.active {
+  background: var(--surface);
+  border-left-color: var(--accent);
+}
+
+.nav-num {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--text3);
+  min-width: 24px;
+  padding-top: 2px;
+  flex-shrink: 0;
+}
+
+.nav-item.active .nav-num { color: var(--accent); }
+
+.nav-text {
+  font-family: 'Syne', sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text2);
+  line-height: 1.4;
+}
+
+.nav-item.active .nav-text { color: var(--text); }
+.nav-item:hover .nav-text { color: var(--text); }
+
+.nav-item.lab-item .nav-num { color: var(--accent3); }
+.nav-item.lab-item.active { border-left-color: var(--accent3); }
+
+.progress-bar {
+  height: 2px;
+  background: var(--border);
+  margin: 0 20px 16px;
+  border-radius: 2px;
+  overflow: hidden;
+}
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), var(--accent3));
+  border-radius: 2px;
+  width: 0%;
+  transition: width 0.3s;
+}
+
+.sidebar-footer {
+  padding: 16px 20px;
+  border-top: 1px solid var(--border);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--text3);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+/* ─── TOGGLE (mobile) ──────────────────────────────────────── */
+#sidebar-toggle {
+  display: none;
+  position: fixed;
+  top: 16px; left: 16px;
+  z-index: 200;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  cursor: pointer;
+  color: var(--text);
+  font-size: 18px;
+  line-height: 1;
+}
+
+/* ─── MAIN CONTENT ─────────────────────────────────────────── */
+#main {
+  margin-left: var(--sidebar-w);
+  flex: 1;
+  min-width: 0;
+}
+
+/* ─── TOP BAR ──────────────────────────────────────────────── */
+.top-bar {
+  position: sticky;
+  top: 0;
+  background: rgba(11, 14, 23, 0.88);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border);
+  padding: 12px 48px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  z-index: 50;
+}
+
+.breadcrumb {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--text3);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.breadcrumb span { color: var(--text2); }
+.breadcrumb .sep { color: var(--border2); }
+
+.top-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.btn-sm {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 6px 12px;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text2);
+  cursor: pointer;
+  transition: all 0.15s;
+  text-decoration: none;
+}
+
+.btn-sm:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* ─── HERO ─────────────────────────────────────────────────── */
+.hero {
+  padding: 80px 80px 60px;
+  background: linear-gradient(135deg, var(--bg2) 0%, var(--bg3) 50%, var(--bg) 100%);
+  border-bottom: 1px solid var(--border);
+  position: relative;
+  overflow: hidden;
+}
+
+.hero::before {
+  content: '';
+  position: absolute;
+  top: -100px; right: -100px;
+  width: 500px; height: 500px;
+  background: radial-gradient(circle, rgba(79,156,249,0.06) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+.hero::after {
+  content: '';
+  position: absolute;
+  bottom: -80px; left: 100px;
+  width: 400px; height: 400px;
+  background: radial-gradient(circle, rgba(0,217,163,0.05) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+.hero-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--accent3);
+  background: rgba(0,217,163,0.08);
+  border: 1px solid rgba(0,217,163,0.2);
+  padding: 5px 14px;
+  border-radius: 40px;
+  margin-bottom: 28px;
+}
+
+.hero-tag::before { content: '◆'; font-size: 7px; }
+
+.hero h1 {
+  font-family: 'Syne', sans-serif;
+  font-size: 52px;
+  font-weight: 800;
+  line-height: 1.08;
+  color: var(--text);
+  margin-bottom: 8px;
+  position: relative;
+}
+
+.hero h1 em {
+  font-style: normal;
+  color: var(--accent);
+}
+
+.hero-sub {
+  font-family: 'Syne', sans-serif;
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text2);
+  margin-bottom: 24px;
+}
+
+.hero-desc {
+  font-size: 16px;
+  color: var(--text3);
+  max-width: 560px;
+  line-height: 1.7;
+  margin-bottom: 36px;
+}
+
+.hero-stats {
+  display: flex;
+  gap: 32px;
+  flex-wrap: wrap;
+}
+
+.hero-stat {
+  display: flex;
+  flex-direction: column;
+}
+
+.hero-stat-num {
+  font-family: 'Syne', sans-serif;
+  font-size: 28px;
+  font-weight: 800;
+  color: var(--accent);
+}
+
+.hero-stat-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text3);
+}
+
+/* ─── CONTENT ──────────────────────────────────────────────── */
+.content {
+  max-width: 820px;
+  padding: 60px 80px 100px;
+  margin: 0 auto;
+}
+
+/* ─── CHAPTER ──────────────────────────────────────────────── */
+.chapter {
+  margin-bottom: 80px;
+  opacity: 0;
+  transform: translateY(20px);
+  transition: opacity 0.5s, transform 0.5s;
+}
+
+.chapter.visible {
+  opacity: 1;
+  transform: none;
+}
+
+.chapter-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 20px;
+  margin-bottom: 28px;
+  padding-bottom: 24px;
+  border-bottom: 1px solid var(--border);
+}
+
+.chapter-num {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--accent);
+  background: rgba(79,156,249,0.08);
+  border: 1px solid rgba(79,156,249,0.2);
+  padding: 4px 10px;
+  border-radius: 4px;
+  margin-top: 6px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.lab-chapter .chapter-num {
+  color: var(--accent3);
+  background: rgba(0,217,163,0.08);
+  border-color: rgba(0,217,163,0.2);
+}
+
+.chapter h2 {
+  font-family: 'Syne', sans-serif;
+  font-size: 30px;
+  font-weight: 800;
+  color: var(--text);
+  line-height: 1.2;
+}
+
+.chapter p {
+  color: var(--text2);
+  margin-bottom: 16px;
+  font-size: 16.5px;
+}
+
+.chapter p:last-child { margin-bottom: 0; }
+
+.chapter h3 {
+  font-family: 'Syne', sans-serif;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text);
+  margin: 32px 0 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.chapter h3::before {
+  content: '';
+  display: inline-block;
+  width: 4px;
+  height: 18px;
+  background: var(--accent);
+  border-radius: 2px;
+}
+
+/* ─── CALLOUT ──────────────────────────────────────────────── */
+.callout {
+  background: var(--surface);
+  border-left: 3px solid var(--accent);
+  border-radius: 0 8px 8px 0;
+  padding: 18px 20px;
+  margin: 24px 0;
+  font-size: 15.5px;
+  color: var(--text2);
+}
+
+.callout.tip { border-left-color: var(--accent3); }
+.callout.warn { border-left-color: var(--accent4); }
+
+.callout strong {
+  display: block;
+  font-family: 'Syne', sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+  color: var(--accent);
+}
+
+.callout.tip strong { color: var(--accent3); }
+.callout.warn strong { color: var(--accent4); }
+
+/* ─── CODE BLOCK ───────────────────────────────────────────── */
+.code-block {
+  background: var(--code-bg);
+  border: 1px solid var(--code-border);
+  border-radius: 10px;
+  margin: 20px 0;
+  overflow: hidden;
+  font-size: 13.5px;
+}
+
+.code-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  background: rgba(255,255,255,0.03);
+  border-bottom: 1px solid var(--code-border);
+}
+
+.code-lang {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text3);
+}
+
+.code-copy {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text3);
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 3px 8px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.code-copy:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.code-copy.copied {
+  color: var(--accent3);
+  border-color: var(--accent3);
+}
+
+.code-block pre {
+  padding: 18px 20px;
+  overflow-x: auto;
+  line-height: 1.65;
+}
+
+.code-block pre::-webkit-scrollbar { height: 4px; }
+.code-block pre::-webkit-scrollbar-track { background: transparent; }
+.code-block pre::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+.code-block code {
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--text2);
+  white-space: pre;
+}
+
+/* Syntax colors */
+.token-comment { color: var(--text3); font-style: italic; }
+.token-cmd { color: var(--accent2); }
+.token-flag { color: var(--accent3); }
+.token-string { color: #a8d9a8; }
+.token-num { color: #e8b86d; }
+.token-keyword { color: #c792ea; }
+.token-bracket { color: var(--highlight); }
+
+/* ─── DIAGRAM BOX ──────────────────────────────────────────── */
+.diagram {
+  background: var(--code-bg);
+  border: 1px solid var(--code-border);
+  border-radius: 10px;
+  padding: 24px;
+  margin: 20px 0;
+  text-align: center;
+}
+
+.diagram pre {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  color: var(--accent2);
+  line-height: 1.8;
+  text-align: left;
+  display: inline-block;
+}
+
+.diagram-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text3);
+  margin-bottom: 14px;
+}
+
+/* ─── STEP LIST ────────────────────────────────────────────── */
+.step-list {
+  list-style: none;
+  margin: 20px 0;
+  counter-reset: steps;
+}
+
+.step-list li {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 20px;
+  counter-increment: steps;
+  padding: 18px 20px;
+  background: var(--surface);
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+
+.step-list li::before {
+  content: counter(steps);
+  font-family: 'Syne', sans-serif;
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--accent);
+  min-width: 28px;
+  line-height: 1.4;
+  flex-shrink: 0;
+}
+
+.step-content { flex: 1; }
+
+.step-title {
+  font-family: 'Syne', sans-serif;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+
+.step-desc {
+  font-size: 14.5px;
+  color: var(--text2);
+  line-height: 1.6;
+  margin: 0;
+}
+
+/* ─── INLINE CODE ──────────────────────────────────────────── */
+code.inline {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.82em;
+  background: rgba(79,156,249,0.08);
+  border: 1px solid rgba(79,156,249,0.18);
+  color: var(--accent2);
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+/* ─── GRID ─────────────────────────────────────────────────── */
+.grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin: 20px 0;
+}
+
+.grid-3 {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 12px;
+  margin: 20px 0;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 18px;
+}
+
+.card h4 {
+  font-family: 'Syne', sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent);
+  margin-bottom: 8px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.card ul {
+  list-style: none;
+  font-size: 14px;
+  color: var(--text2);
+  line-height: 1.9;
+}
+
+.card ul li::before {
+  content: '→ ';
+  color: var(--text3);
+}
+
+/* ─── TABLE ────────────────────────────────────────────────── */
+.table-wrap {
+  overflow-x: auto;
+  margin: 20px 0;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+thead { background: var(--surface); }
+
+th {
+  font-family: 'Syne', sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text3);
+  padding: 12px 16px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+
+td {
+  padding: 11px 16px;
+  color: var(--text2);
+  border-bottom: 1px solid rgba(42,53,86,0.5);
+  vertical-align: top;
+}
+
+tbody tr:last-child td { border-bottom: none; }
+tbody tr:hover td { background: rgba(26,32,53,0.5); }
+
+td code { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--accent2); }
+
+/* ─── STAGE PATH ───────────────────────────────────────────── */
+.mastery-path {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin: 24px 0;
+}
+
+.stage {
+  display: flex;
+  gap: 20px;
+  align-items: flex-start;
+  padding: 20px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  position: relative;
+  transition: border-color 0.2s;
+}
+
+.stage:hover { border-color: var(--border2); }
+
+.stage-num {
+  font-family: 'Syne', sans-serif;
+  font-size: 32px;
+  font-weight: 800;
+  line-height: 1;
+  min-width: 48px;
+  text-align: center;
+}
+
+.s1 .stage-num { color: #4f9cf9; }
+.s2 .stage-num { color: #7c3aed; }
+.s3 .stage-num { color: #00d9a3; }
+.s4 .stage-num { color: #f97316; }
+
+.stage-info { flex: 1; }
+.stage-title {
+  font-family: 'Syne', sans-serif;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 8px;
+}
+
+.stage-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tag {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  padding: 3px 9px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  color: var(--text2);
+  background: var(--bg);
+}
+
+/* ─── LAB CARD ─────────────────────────────────────────────── */
+.lab-card {
+  background: rgba(0,217,163,0.04);
+  border: 1px solid rgba(0,217,163,0.15);
+  border-radius: 10px;
+  padding: 24px;
+  margin-bottom: 24px;
+}
+
+.lab-card-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.lab-badge {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent3);
+  background: rgba(0,217,163,0.1);
+  border: 1px solid rgba(0,217,163,0.2);
+  padding: 4px 10px;
+  border-radius: 4px;
+}
+
+.lab-card-title {
+  font-family: 'Syne', sans-serif;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.lab-goal {
+  font-size: 15px;
+  color: var(--text2);
+  margin-bottom: 12px;
+}
+
+.lab-requirements {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  color: var(--text3);
+  border-top: 1px solid rgba(0,217,163,0.1);
+  padding-top: 12px;
+  margin-top: 12px;
+  line-height: 1.9;
+}
+
+/* ─── SECTION DIVIDER ──────────────────────────────────────── */
+.section-divider {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin: 60px 0 40px;
+}
+
+.section-divider-line {
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+.section-divider-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--text3);
+  padding: 5px 12px;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+}
+
+/* ─── FINAL CALLOUT ────────────────────────────────────────── */
+.final-callout {
+  background: linear-gradient(135deg, var(--bg3), var(--surface));
+  border: 1px solid var(--border2);
+  border-radius: 12px;
+  padding: 36px 40px;
+  margin-top: 48px;
+  text-align: center;
+}
+
+.final-callout h3 {
+  font-family: 'Syne', sans-serif;
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--text);
+  margin-bottom: 12px;
+}
+
+.final-callout p {
+  font-size: 15.5px;
+  color: var(--text2);
+  max-width: 520px;
+  margin: 0 auto 20px;
+}
+
+.final-pill {
+  display: inline-block;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--accent3);
+  background: rgba(0,217,163,0.08);
+  border: 1px solid rgba(0,217,163,0.25);
+  padding: 8px 20px;
+  border-radius: 40px;
+  letter-spacing: 0.06em;
+}
+
+/* ─── RESPONSIVE ───────────────────────────────────────────── */
+@media (max-width: 900px) {
+  #sidebar { transform: translateX(-100%); }
+  #sidebar.open { transform: translateX(0); }
+  #sidebar-toggle { display: block; }
+  #main { margin-left: 0; }
+  .hero { padding: 70px 24px 48px; }
+  .hero h1 { font-size: 36px; }
+  .content { padding: 40px 24px 80px; }
+  .top-bar { padding: 12px 24px; }
+  .grid-2, .grid-3 { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 600px) {
+  .hero h1 { font-size: 28px; }
+  .hero-stats { gap: 20px; }
+  .chapter h2 { font-size: 22px; }
+  .chapter-header { gap: 12px; }
+  .chapter-num { font-size: 9px; }
+}
+
+/* ─── SCROLL TO TOP ────────────────────────────────────────── */
+#scroll-top {
+  position: fixed;
+  bottom: 28px; right: 28px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  width: 40px; height: 40px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  color: var(--text2);
+  font-size: 16px;
+  opacity: 0;
+  transition: opacity 0.3s, border-color 0.2s;
+  z-index: 90;
+}
+#scroll-top.visible { opacity: 1; }
+#scroll-top:hover { border-color: var(--accent); color: var(--accent); }
+
+/* ─── OVERLAY (mobile) ─────────────────────────────────────── */
+#overlay {
+  display: none;
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.5);
+  z-index: 99;
+}
+</style>
+</head>
+<body>
+
+<button id="sidebar-toggle">☰</button>
+<div id="overlay"></div>
+
+<!-- ─── SIDEBAR ───────────────────────────────── -->
+<nav id="sidebar">
+  <div class="sidebar-header">
+    <div class="sidebar-logo">Systems Guide</div>
+    <div class="sidebar-title">Virtual Ethernet & Network Namespaces</div>
+    <div class="sidebar-sub">v1.0 · Linux Kernel Networking</div>
+  </div>
+
+  <div class="sidebar-search">
+    <input type="text" id="nav-search" placeholder="Search chapters…" autocomplete="off">
+  </div>
+
+  <div style="padding: 12px 20px 0;">
+    <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
+  </div>
+
+  <div class="sidebar-nav" id="sidebar-nav">
+    <div class="nav-section-label">Foundations</div>
+    <a class="nav-item active" href="#ch1" data-label="Why veth Exists"><span class="nav-num">01</span><span class="nav-text">Why veth Exists</span></a>
+    <a class="nav-item" href="#ch2" data-label="Mental Model"><span class="nav-num">02</span><span class="nav-text">Mental Model</span></a>
+    <a class="nav-item" href="#ch3" data-label="Network Namespaces"><span class="nav-num">03</span><span class="nav-text">Network Namespaces</span></a>
+
+    <div class="nav-section-label">Setup & Configuration</div>
+    <a class="nav-item" href="#ch4" data-label="First Namespace"><span class="nav-num">04</span><span class="nav-text">First Namespace</span></a>
+    <a class="nav-item" href="#ch5" data-label="Creating a veth Pair"><span class="nav-num">05</span><span class="nav-text">Creating a veth Pair</span></a>
+    <a class="nav-item" href="#ch6" data-label="Moving Interfaces"><span class="nav-num">06</span><span class="nav-text">Moving Interfaces</span></a>
+    <a class="nav-item" href="#ch7" data-label="IP Addresses"><span class="nav-num">07</span><span class="nav-text">Assigning IP Addresses</span></a>
+    <a class="nav-item" href="#ch8" data-label="Bringing UP"><span class="nav-num">08</span><span class="nav-text">Bringing Interfaces UP</span></a>
+    <a class="nav-item" href="#ch9" data-label="Testing Connectivity"><span class="nav-num">09</span><span class="nav-text">Testing Connectivity</span></a>
+
+    <div class="nav-section-label">Internals & Architecture</div>
+    <a class="nav-item" href="#ch10" data-label="Packet Flow"><span class="nav-num">10</span><span class="nav-text">Packet Flow Internals</span></a>
+    <a class="nav-item" href="#ch11" data-label="Programs in NS"><span class="nav-num">11</span><span class="nav-text">Programs in Namespaces</span></a>
+    <a class="nav-item" href="#ch12" data-label="Python Sockets"><span class="nav-num">12</span><span class="nav-text">Python Sockets Across veth</span></a>
+    <a class="nav-item" href="#ch13" data-label="Multiple NS"><span class="nav-num">13</span><span class="nav-text">Multiple Namespaces</span></a>
+    <a class="nav-item" href="#ch14" data-label="Linux Bridges"><span class="nav-num">14</span><span class="nav-text">Linux Bridges</span></a>
+    <a class="nav-item" href="#ch15" data-label="Container Networking"><span class="nav-num">15</span><span class="nav-text">Container Networking</span></a>
+
+    <div class="nav-section-label">Debugging & Failures</div>
+    <a class="nav-item" href="#ch16" data-label="Debugging Toolkit"><span class="nav-num">16</span><span class="nav-text">Debugging Toolkit</span></a>
+    <a class="nav-item" href="#ch17" data-label="Failure Modes"><span class="nav-num">17</span><span class="nav-text">Common Failure Modes</span></a>
+    <a class="nav-item" href="#ch18" data-label="Systems Level"><span class="nav-num">18</span><span class="nav-text">Systems-Level Understanding</span></a>
+
+    <div class="nav-section-label">Practice Labs</div>
+    <a class="nav-item lab-item" href="#ch19" data-label="Practice Labs"><span class="nav-num">Lab</span><span class="nav-text">Practice Labs (1–7)</span></a>
+
+    <div class="nav-section-label">Mastery</div>
+    <a class="nav-item" href="#ch20" data-label="Mastery Path"><span class="nav-num">20</span><span class="nav-text">Mastery Path</span></a>
+  </div>
+
+  <div class="sidebar-footer">
+    <span id="read-chapter">Chapter 1 of 20</span>
+    <span>Linux Networking</span>
+  </div>
+</nav>
+
+<!-- ─── MAIN ───────────────────────────────────── -->
+<div id="main">
+
+  <div class="top-bar">
+    <div class="breadcrumb">
+      Systems Guide <span class="sep">/</span> <span id="current-chapter-name">Why veth Exists</span>
+    </div>
+    <div class="top-actions">
+      <button class="btn-sm" onclick="window.print()">Print</button>
+    </div>
+  </div>
+
+  <!-- HERO -->
+  <div class="hero">
+    <div class="hero-tag">Practical Systems Programming</div>
+    <h1>Virtual <em>Ethernet</em> &<br>Linux Network Namespaces</h1>
+    <div class="hero-sub">A Mini-Guide to Modern Kernel Networking Primitives</div>
+    <p class="hero-desc">
+      Understand the foundational building blocks behind Docker, Kubernetes, and every container runtime — from first principles. No magic, just kernel plumbing.
+    </p>
+    <div class="hero-stats">
+      <div class="hero-stat"><span class="hero-stat-num">20</span><span class="hero-stat-label">Chapters</span></div>
+      <div class="hero-stat"><span class="hero-stat-num">7</span><span class="hero-stat-label">Practice Labs</span></div>
+      <div class="hero-stat"><span class="hero-stat-num">4</span><span class="hero-stat-label">Mastery Stages</span></div>
+      <div class="hero-stat"><span class="hero-stat-num">∞</span><span class="hero-stat-label">Understanding</span></div>
+    </div>
+  </div>
+
+  <!-- CONTENT -->
+  <div class="content">
+
+    <!-- CH 1 -->
+    <div class="chapter" id="ch1">
+      <div class="chapter-header">
+        <span class="chapter-num">Chapter 01</span>
+        <h2>Why veth Exists</h2>
+      </div>
+
+      <p>Modern Linux networking is fundamentally built around <strong style="color:var(--text)">isolation</strong>. As cloud infrastructure and containerization have become the norm, processes increasingly need to operate in hermetically sealed networking environments — without the overhead of a full virtual machine.</p>
+
+      <p>Processes may require isolated routing tables, isolated interfaces, isolated firewall rules, and even isolated <code class="inline">localhost</code> environments, all while sharing the same physical host.</p>
+
+      <div class="grid-2">
+        <div class="card">
+          <h4>Linux Solves This With</h4>
+          <ul>
+            <li>Network namespaces</li>
+            <li>Virtual Ethernet devices (veth)</li>
+            <li>Linux bridges</li>
+            <li>iptables / nftables</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h4>Powers Everything In</h4>
+          <ul>
+            <li>Docker & Podman</li>
+            <li>Kubernetes pods</li>
+            <li>CTF sandboxes</li>
+            <li>Service meshes</li>
+          </ul>
+        </div>
+      </div>
+
+      <p>A <code class="inline">veth</code> pair behaves exactly like a <strong style="color:var(--text)">virtual cable</strong> — a bidirectional pipe through the kernel. Anything entering one side immediately exits the other:</p>
+
+      <div class="diagram">
+        <div class="diagram-label">veth pair — virtual cable</div>
+        <pre>[  veth0  ] &lt;═══════════════&gt; [  veth1  ]
+     ↑                               ↑
+  Host side                   Namespace side</pre>
+      </div>
+
+      <div class="callout tip">
+        <strong>💡 Key Insight</strong>
+        The entire veth pair exists inside the kernel — no physical hardware, no NIC required. Packets traverse it at memory-copy speed.
+      </div>
+    </div>
+
+    <!-- CH 2 -->
+    <div class="chapter" id="ch2">
+      <div class="chapter-header">
+        <span class="chapter-num">Chapter 02</span>
+        <h2>Mental Model</h2>
+      </div>
+
+      <p>The best way to understand virtual Ethernet is to think physically. The analogy maps almost perfectly to real hardware.</p>
+
+      <div class="grid-2">
+        <div class="diagram" style="margin:0">
+          <div class="diagram-label">Physical Ethernet</div>
+          <pre>Computer A
+    │
+  cable
+    │
+Computer B</pre>
+        </div>
+        <div class="diagram" style="margin:0">
+          <div class="diagram-label">Virtual Ethernet (veth)</div>
+          <pre>Namespace A
+    │
+veth pair
+    │
+Namespace B</pre>
+        </div>
+      </div>
+
+      <p style="margin-top:20px">The key difference is that both ends exist entirely inside the kernel — there is no wire, no NIC, no physical signal. The kernel handles the "transmission" by directly moving packet buffers between two <code class="inline">net_device</code> structures in memory.</p>
+
+      <p>This makes veth pairs:</p>
+      <div class="grid-3" style="margin-top:8px">
+        <div class="card">
+          <h4>⚡ Extremely Fast</h4>
+          <ul><li>No serialization</li><li>No DMA transfers</li><li>No IRQs</li></ul>
+        </div>
+        <div class="card">
+          <h4>🔒 Fully Isolated</h4>
+          <ul><li>Separate ARP</li><li>Separate routing</li><li>Separate firewall</li></ul>
+        </div>
+        <div class="card">
+          <h4>🔬 Perfectly Observable</h4>
+          <ul><li>tcpdump works</li><li>ss works</li><li>ip tools work</li></ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- CH 3 -->
+    <div class="chapter" id="ch3">
+      <div class="chapter-header">
+        <span class="chapter-num">Chapter 03</span>
+        <h2>What Is a Network Namespace?</h2>
+      </div>
+
+      <p>A <strong style="color:var(--text)">network namespace</strong> is a complete, isolated networking stack — a full software replica of the networking environment that the kernel provides, but hermetically separated from every other namespace on the system.</p>
+
+      <p>Think of it as giving a process its own private version of the entire Linux network subsystem.</p>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Component</th>
+              <th>Description</th>
+              <th>Isolated?</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td><code>interfaces</code></td><td>Network devices (eth0, lo, etc.)</td><td style="color:var(--accent3)">✓ Yes</td></tr>
+            <tr><td><code>routing table</code></td><td>Kernel IP routing decisions</td><td style="color:var(--accent3)">✓ Yes</td></tr>
+            <tr><td><code>ARP table</code></td><td>IP → MAC address mappings</td><td style="color:var(--accent3)">✓ Yes</td></tr>
+            <tr><td><code>iptables</code></td><td>Packet filtering rules</td><td style="color:var(--accent3)">✓ Yes</td></tr>
+            <tr><td><code>127.0.0.1</code></td><td>Loopback / localhost</td><td style="color:var(--accent3)">✓ Yes</td></tr>
+            <tr><td><code>sockets</code></td><td>Bound ports and connections</td><td style="color:var(--accent3)">✓ Yes</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="callout">
+        <strong>📦 Practical Reality</strong>
+        Processes inside different namespaces behave exactly like separate physical machines, even though they share the same CPU, RAM, and disk. Each one has its own <code class="inline">127.0.0.1</code>, its own port space, its own routing decisions.
+      </div>
+    </div>
+
+    <!-- CH 4 -->
+    <div class="chapter" id="ch4">
+      <div class="chapter-header">
+        <span class="chapter-num">Chapter 04</span>
+        <h2>Your First Namespace</h2>
+      </div>
+
+      <p>Creating a network namespace is a single command. The kernel allocates a new, isolated networking stack and gives it a name you can reference later.</p>
+
+      <div class="code-block">
+        <div class="code-header"><span class="code-lang">bash</span><button class="code-copy" onclick="copyCode(this)">Copy</button></div>
+        <pre><code><span class="token-comment"># Create a named network namespace</span>
+sudo ip netns add ns1
+
+<span class="token-comment"># Verify it was created</span>
+ip netns list</code></pre>
+      </div>
+
+      <p>Behind the scenes, the kernel creates a reference file at:</p>
+
+      <div class="code-block">
+        <div class="code-header"><span class="code-lang">filesystem</span><button class="code-copy" onclick="copyCode(this)">Copy</button></div>
+        <pre><code>/var/run/netns/ns1</code></pre>
+      </div>
+
+      <p>This file is a bind-mount that holds a reference to the kernel namespace object, keeping it alive even if no processes are running inside it.</p>
+
+      <div class="callout tip">
+        <strong>💡 Tip</strong>
+        You can execute commands inside a namespace using <code class="inline">ip netns exec &lt;name&gt; &lt;command&gt;</code>. This is how you interact with the isolated environment from the host.
+      </div>
+    </div>
+
+    <!-- CH 5 -->
+    <div class="chapter" id="ch5">
+      <div class="chapter-header">
+        <span class="chapter-num">Chapter 05</span>
+        <h2>Creating a veth Pair</h2>
+      </div>
+
+      <p>A veth pair is always created as two connected interfaces simultaneously. You cannot create one end without the other — they are born as a matched pair, like two ends of a cable.</p>
+
+      <div class="code-block">
+        <div class="code-header"><span class="code-lang">bash</span><button class="code-copy" onclick="copyCode(this)">Copy</button></div>
+        <pre><code><span class="token-comment"># Create a veth pair: veth0 ↔ veth1</span>
+sudo ip link add veth0 type veth peer name veth1
+
+<span class="token-comment"># Verify both interfaces now exist</span>
+ip link</code></pre>
+      </div>
+
+      <div class="diagram">
+        <div class="diagram-label">Result — both interfaces in the host namespace</div>
+        <pre>HOST NAMESPACE
+┌──────────────────────────────────────┐
+│   veth0  &lt;═══════════════&gt;  veth1   │
+│   (DOWN)                    (DOWN)   │
+└──────────────────────────────────────┘</pre>
+      </div>
+
+      <p>At this point, both interfaces are in the <strong style="color:var(--text)">default namespace</strong> and are in the <code class="inline">DOWN</code> state. The next step is to move one end into a namespace — effectively "plugging in" one end of the cable.</p>
+    </div>
+
+    <!-- CH 6 -->
+    <div class="chapter" id="ch6">
+      <div class="chapter-header">
+        <span class="chapter-num">Chapter 06</span>
+        <h2>Moving an Interface Into a Namespace</h2>
+      </div>
+
+      <p>Moving one end of the veth pair into a namespace creates the virtual cable between the host and the namespace. Once moved, <code class="inline">veth1</code> disappears from the host's interface list and becomes visible only inside <code class="inline">ns1</code>.</p>
+
+      <div class="code-block">
+        <div class="code-header"><span class="code-lang">bash</span><button class="code-copy" onclick="copyCode(this)">Copy</button></div>
+        <pre><code><span class="token-comment"># Move veth1 into namespace ns1</span>
+sudo ip link set veth1 netns ns1
+
+<span class="token-comment"># Verify: veth1 is gone from host</span>
+ip link
+
+<span class="token-comment"># Verify: veth1 appears inside ns1</span>
+sudo ip netns exec ns1 ip link</code></pre>
+      </div>
+
+      <div class="diagram">
+        <div class="diagram-label">After moving veth1 into ns1</div>
+        <pre>HOST NAMESPACE          NAMESPACE ns1
+┌───────────┐           ┌───────────┐
+│   veth0   │&lt;═════════&gt;│   veth1   │
+│   (DOWN)  │           │   (DOWN)  │
+└───────────┘           └───────────┘
+      ↑                       ↑
+  Stays here           Lives here now</pre>
+      </div>
+
+      <div class="callout warn">
+        <strong>⚠️ Important</strong>
+        An interface can only exist in <em>one</em> namespace at a time. Moving it is a one-way operation per invocation — the interface is relocated, not copied.
+      </div>
+    </div>
+
+    <!-- CH 7 -->
+    <div class="chapter" id="ch7">
+      <div class="chapter-header">
+        <span class="chapter-num">Chapter 07</span>
+        <h2>Assigning IP Addresses</h2>
+      </div>
+
+      <p>With the virtual cable in place, we need to assign IP addresses to each end so that the kernel can route packets between them.</p>
+
+      <div class="code-block">
+        <div class="code-header"><span class="code-lang">bash — host side</span><button class="code-copy" onclick="copyCode(this)">Copy</button></div>
+        <pre><code><span class="token-comment"># Assign IP to veth0 on the host</span>
+sudo ip addr add <span class="token-num">192.168.100.1</span>/24 dev veth0</code></pre>
+      </div>
+
+      <div class="code-block">
+        <div class="code-header"><span class="code-lang">bash — namespace side</span><button class="code-copy" onclick="copyCode(this)">Copy</button></div>
+        <pre><code><span class="token-comment"># Assign IP to veth1 inside ns1</span>
+sudo ip netns exec ns1 ip addr add <span class="token-num">192.168.100.2</span>/24 dev veth1</code></pre>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Interface</th><th>Location</th><th>IP Address</th><th>Subnet</th></tr></thead>
+          <tbody>
+            <tr><td><code>veth0</code></td><td>Host namespace</td><td><code>192.168.100.1</code></td><td><code>/24</code></td></tr>
+            <tr><td><code>veth1</code></td><td>Namespace <code>ns1</code></td><td><code>192.168.100.2</code></td><td><code>/24</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>Both addresses must be on the same subnet (<code class="inline">/24</code> here, meaning <code class="inline">192.168.100.0–255</code>) so the kernel's routing logic considers them directly reachable without needing a gateway.</p>
+    </div>
+
+    <!-- CH 8 -->
+    <div class="chapter" id="ch8">
+      <div class="chapter-header">
+        <span class="chapter-num">Chapter 08</span>
+        <h2>Bringing Interfaces UP</h2>
+      </div>
+
+      <p>Linux interfaces are created in the <code class="inline">DOWN</code> state by default. You must explicitly bring each one up. This applies to both ends of the veth pair, and also to the loopback interface inside the namespace — a commonly forgotten step that causes mysterious failures.</p>
+
+      <ol class="step-list">
+        <li>
+          <div class="step-content">
+            <div class="step-title">Bring up veth0 on the host</div>
+            <div class="code-block" style="margin-top:10px"><div class="code-header"><span class="code-lang">bash</span><button class="code-copy" onclick="copyCode(this)">Copy</button></div><pre><code>sudo ip link set veth0 up</code></pre></div>
+          </div>
+        </li>
+        <li>
+          <div class="step-content">
+            <div class="step-title">Bring up veth1 inside ns1</div>
+            <div class="code-block" style="margin-top:10px"><div class="code-header"><span class="code-lang">bash</span><button class="code-copy" onclick="copyCode(this)">Copy</button></div><pre><code>sudo ip netns exec ns1 ip link set veth1 up</code></pre></div>
+          </div>
+        </li>
+        <li>
+          <div class="step-content">
+            <div class="step-title">Bring up loopback inside ns1</div>
+            <p class="step-desc">Without this, applications inside the namespace that bind to <code class="inline">127.0.0.1</code> will fail silently.</p>
+            <div class="code-block" style="margin-top:10px"><div class="code-header"><span class="code-lang">bash</span><button class="code-copy" onclick="copyCode(this)">Copy</button></div><pre><code>sudo ip netns exec ns1 ip link set lo up</code></pre></div>
+          </div>
+        </li>
+      </ol>
+    </div>
+
+    <!-- CH 9 -->
+    <div class="chapter" id="ch9">
+      <div class="chapter-header">
+        <span class="chapter-num">Chapter 09</span>
+        <h2>Testing Connectivity</h2>
+      </div>
+
+      <p>With both interfaces up and IPs assigned, you now have a fully functioning virtual network. Test it by pinging the namespace's IP from the host:</p>
+
+      <div class="code-block">
+        <div class="code-header"><span class="code-lang">bash</span><button class="code-copy" onclick="copyCode(this)">Copy</button></div>
+        <pre><code><span class="token-comment"># Ping the namespace from the host</span>
+ping <span class="token-num">192.168.100.2</span></code></pre>
+      </div>
+
+      <div class="code-block">
+        <div class="code-header"><span class="code-lang">output — success</span><button class="code-copy" onclick="copyCode(this)">Copy</button></div>
+        <pre><code>PING 192.168.100.2 (192.168.100.2) 56(84) bytes of data.
+64 bytes from <span class="token-num">192.168.100.2</span>: icmp_seq=1 ttl=64 time=0.082 ms
+64 bytes from <span class="token-num">192.168.100.2</span>: icmp_seq=2 ttl=64 time=0.071 ms
+64 bytes from <span class="token-num">192.168.100.2</span>: icmp_seq=3 ttl=64 time=0.068 ms</code></pre>
+      </div>
+
+      <div class="callout tip">
+        <strong>💡 Notice the latency</strong>
+        Sub-millisecond RTT. This is what "kernel-internal" means — no physical wire, no NIC interrupt. The packet traverses only kernel memory.
+      </div>
+
+      <p>You can also ping in the other direction — from inside the namespace back to the host:</p>
+
+      <div class="code-block">
+        <div class="code-header"><span class="code-lang">bash</span><button class="code-copy" onclick="copyCode(this)">Copy</button></div>
+        <pre><code>sudo ip netns exec ns1 ping <span class="token-num">192.168.100.1</span></code></pre>
+      </div>
+    </div>
+
+    <!-- CH 10 -->
+    <div class="chapter" id="ch10">
+      <div class="chapter-header">
+        <span class="chapter-num">Chapter 10</span>
+        <h2>Packet Flow Internals</h2>
+      </div>
+
+      <p>Understanding exactly what happens inside the kernel when a ping traverses a veth pair demystifies a lot of container networking. Here is the precise sequence:</p>
+
+      <ol class="step-list">
+        <li>
+          <div class="step-content">
+            <div class="step-title">Routing Lookup</div>
+            <p class="step-desc">The kernel consults its routing table to determine which interface can reach <code class="inline">192.168.100.2</code>.</p>
+            <div class="code-block" style="margin-top:10px"><div class="code-header"><span class="code-lang">bash</span><button class="code-copy" onclick="copyCode(this)">Copy</button></div><pre><code>ip route
+<span class="token-comment"># → 192.168.100.0/24 dev veth0 proto kernel scope link src 192.168.100.1</span></code></pre></div>
+          </div>
+        </li>
+        <li>
+          <div class="step-content">
+            <div class="step-title">ARP Resolution</div>
+            <p class="step-desc">The kernel sends an ARP broadcast: <em>"Who owns 192.168.100.2?"</em> The namespace's networking stack replies with the MAC address of <code class="inline">veth1</code>. The kernel caches this mapping.</p>
+          </div>
+        </li>
+        <li>
+          <div class="step-content">
+            <div class="step-title">Ethernet Frame Transmission</div>
+            <p class="step-desc">The ICMP packet is wrapped in an Ethernet frame addressed to <code class="inline">veth1</code>'s MAC and passed to <code class="inline">veth0</code>'s transmit path. The veth driver's <code class="inline">dev_queue_xmit()</code> redirects the frame directly into <code class="inline">veth1</code>'s receive queue. No hardware involved.</p>
+          </div>
+        </li>
+        <li>
+          <div class="step-content">
+            <div class="step-title">ICMP Handling & Reply</div>
+            <p class="step-desc">The namespace's networking stack processes the ICMP echo request, constructs an echo reply, and sends it back through the same path in reverse.</p>
+          </div>
+        </li>
+      </ol>
+    </div>
+
+    <!-- CH 11 -->
+    <div class="chapter" id="ch11">
+      <div class="chapter-header">
+        <span class="chapter-num">Chapter 11</span>
+        <h2>Running Programs Inside Namespaces</h2>
+      </div>
+
+      <p>You can execute any program inside a network namespace using <code class="inline">ip netns exec</code>. The program sees only the interfaces and routing table of that namespace, as if it were running on an isolated machine.</p>
+
+      <div class="code-block">
+        <div class="code-header"><span class="code-lang">bash — open an interactive shell</span><button class="code-copy" onclick="copyCode(this)">Copy</button></div>
+        <pre><code>sudo ip netns exec ns1 bash</code></pre>
+      </div>
+
+      <p>Once inside, standard networking commands see only the namespace's interfaces:</p>
+
+      <div class="code-block">
+        <div class="code-header"><span class="code-lang">bash — inside ns1</span><button class="code-copy" onclick="copyCode(this)">Copy</button></div>
+        <pre><code>ip addr
+<span class="token-comment"># Output:
+# 1: lo: &lt;LOOPBACK,UP,LOWER_UP&gt; mtu 65536 ...
+#     inet 127.0.0.1/8 scope host lo
+# 2: veth1: &lt;BROADCAST,MULTICAST,UP,LOWER_UP&gt; ...
+#     inet 192.168.100.2/24 scope global veth1</span></code></pre>
+      </div>
+
+      <div class="callout tip">
+        <strong>💡 Use Case</strong>
+        This is exactly how container runtimes like Docker work — they call <code class="inline">clone(2)</code> with <code class="inline">CLONE_NEWNET</code>, move a veth peer into the new namespace, then execute the container process. The container's <code class="inline">eth0</code> is that veth peer.
+      </div>
+    </div>
+
+    <!-- CH 12 -->
+    <div class="chapter" id="ch12">
+      <div class="chapter-header">
+        <span class="chapter-num">Chapter 12</span>
+        <h2>Python Sockets Across veth</h2>
+      </div>
+
+      <p>veth pairs work transparently with all socket-based applications. Here's a minimal TCP client-server example spanning the host and namespace:</p>
+
+      <div class="code-block">
+        <div class="code-header"><span class="code-lang">python — server (run on host)</span><button class="code-copy" onclick="copyCode(this)">Copy</button></div>
+        <pre><code><span class="token-keyword">import</span> socket
+
+s = socket.socket()
+s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, <span class="token-num">1</span>)
+s.bind((<span class="token-string">"192.168.100.1"</span>, <span class="token-num">31337</span>))
+s.listen(<span class="token-num">1</span>)
+
+print(<span class="token-string">"[+] Waiting for connection..."</span>)
+conn, addr = s.accept()
+print(f<span class="token-string">"[+] Connected from {addr}"</span>)
+
+<span class="token-keyword">while</span> <span class="token-keyword">True</span>:
+    data = conn.recv(<span class="token-num">1024</span>)
+    <span class="token-keyword">if not</span> data: <span class="token-keyword">break</span>
+    print(f<span class="token-string">"[host] received: {data.decode()}"</span>)
+    conn.send(<span class="token-string">b"ACK: "</span> + data)</code></pre>
+      </div>
+
+      <div class="code-block">
+        <div class="code-header"><span class="code-lang">python — client (run inside ns1)</span><button class="code-copy" onclick="copyCode(this)">Copy</button></div>
+        <pre><code><span class="token-comment"># sudo ip netns exec ns1 python3</span>
+<span class="token-keyword">import</span> socket
+
+s = socket.socket()
+s.connect((<span class="token-string">"192.168.100.1"</span>, <span class="token-num">31337</span>))
+
+s.send(<span class="token-string">b"hello from ns1"</span>)
+reply = s.recv(<span class="token-num">1024</span>)
+print(f<span class="token-string">"[ns1] got: {reply.decode()}"</span>)
+s.close()</code></pre>
+      </div>
+
+      <div class="callout">
+        <strong>🔬 What this demonstrates</strong>
+        The kernel routes packets through the veth pair using normal socket paths. From the application's perspective, this is indistinguishable from a real network connection to a remote machine.
+      </div>
+    </div>
+
+    <!-- CH 13 -->
+    <div class="chapter" id="ch13">
+      <div class="chapter-header">
+        <span class="chapter-num">Chapter 13</span>
+        <h2>Multiple Namespaces</h2>
+      </div>
+
+      <p>A single veth pair connects exactly two endpoints. To connect multiple namespaces, you need a <strong style="color:var(--text)">bridge</strong> — a software Layer 2 switch that can forward frames between many veth interfaces simultaneously.</p>
+
+      <div class="diagram">
+        <div class="diagram-label">Multi-namespace topology</div>
+        <pre>   ns1           ns2           ns3
+    │              │              │
+  veth1          veth3          veth5
+    │              │              │
+  veth0          veth2          veth4
+    └──────────────┴──────────────┘
+                   │
+               [ br0 bridge ]
+                   │
+             Host network</pre>
+      </div>
+
+      <p>This is exactly the architecture Docker uses for its default bridge network mode. Each container gets a veth pair; one end lives in the container's namespace, the other is attached to the <code class="inline">docker0</code> bridge.</p>
+    </div>
+
+    <!-- CH 14 -->
+    <div class="chapter" id="ch14">
+      <div class="chapter-header">
+        <span class="chapter-num">Chapter 14</span>
+        <h2>Linux Bridges</h2>
+      </div>
+
+      <p>A Linux bridge is a software Layer 2 switch implemented entirely in the kernel. It learns MAC addresses, forwards frames, and supports spanning tree — just like a physical managed switch.</p>
+
+      <div class="code-block">
+        <div class="code-header"><span class="code-lang">bash — create and configure a bridge</span><button class="code-copy" onclick="copyCode(this)">Copy</button></div>
+        <pre><code><span class="token-comment"># Create the bridge device</span>
+sudo ip link add br0 type bridge
+sudo ip link set br0 up
+
+<span class="token-comment"># Assign an IP to the bridge (becomes gateway)</span>
+sudo ip addr add <span class="token-num">10.0.0.1</span>/24 dev br0
+
+<span class="token-comment"># Attach veth host-end to the bridge</span>
+sudo ip link set veth0 master br0
+sudo ip link set veth2 master br0  <span class="token-comment"># second namespace</span>
+
+<span class="token-comment"># Inspect bridge state</span>
+bridge link show</code></pre>
+      </div>
+
+      <div class="callout tip">
+        <strong>💡 Slaves vs Masters</strong>
+        When you <code class="inline">set veth0 master br0</code>, <code class="inline">veth0</code> becomes a "port" on the bridge. The bridge now owns Layer 2 forwarding for all attached interfaces. The bridge's IP becomes the gateway for all namespaces attached to it.
+      </div>
+    </div>
+
+    <!-- CH 15 -->
+    <div class="chapter" id="ch15">
+      <div class="chapter-header">
+        <span class="chapter-num">Chapter 15</span>
+        <h2>Container Networking Architecture</h2>
+      </div>
+
+      <p>Every time Docker starts a container, it executes a sequence of kernel operations that you now fully understand:</p>
+
+      <div class="diagram">
+        <div class="diagram-label">Docker bridge networking — full stack</div>
+        <pre>Container Namespace (e.g., myapp)
+┌──────────────────────────────┐
+│  eth0  ←  inside container  │
+└────────┬─────────────────────┘
+         │  veth pair
+         │
+┌────────┴─────────────────────┐
+│  vethXXXXX  (host side)      │
+│       │                      │
+│  [ docker0 bridge ]          │  ← 172.17.0.1
+│       │                      │
+│  host network stack          │
+│       │                      │
+│  iptables NAT (MASQUERADE)   │  ← outbound internet
+└──────────────────────────────┘</pre>
+      </div>
+
+      <p>Kubernetes extends this foundation significantly, but the primitive never changes:</p>
+
+      <div class="grid-2" style="margin-top:16px">
+        <div class="card">
+          <h4>Docker adds</h4>
+          <ul>
+            <li>Bridge <code style="font-size:11px">docker0</code></li>
+            <li>iptables NAT rules</li>
+            <li>Port mapping (DNAT)</li>
+            <li>DNS via embedded server</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h4>Kubernetes adds</h4>
+          <ul>
+            <li>VXLAN overlay tunnels</li>
+            <li>CNI plugin chain</li>
+            <li>kube-proxy iptables</li>
+            <li>eBPF datapath (Cilium)</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- CH 16 -->
+    <div class="chapter" id="ch16">
+      <div class="chapter-header">
+        <span class="chapter-num">Chapter 16</span>
+        <h2>Debugging Toolkit</h2>
+      </div>
+
+      <p>These are the essential tools for diagnosing virtual network issues. Bookmark this page — you'll return to it often.</p>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Command</th><th>What It Shows</th><th>When to Use</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>ip link</code></td>
+              <td>All interfaces + state (UP/DOWN)</td>
+              <td>First check — is the interface there and up?</td>
+            </tr>
+            <tr>
+              <td><code>ip addr</code></td>
+              <td>Interfaces + assigned IPs</td>
+              <td>Verify IPs are assigned correctly</td>
+            </tr>
+            <tr>
+              <td><code>ip route</code></td>
+              <td>Kernel routing table</td>
+              <td>Why can't I reach this IP?</td>
+            </tr>
+            <tr>
+              <td><code>ip netns exec ns1 ip addr</code></td>
+              <td>Interfaces inside namespace</td>
+              <td>Inspect namespace-specific state</td>
+            </tr>
+            <tr>
+              <td><code>tcpdump -i veth0</code></td>
+              <td>Live packet capture</td>
+              <td>Is traffic actually flowing?</td>
+            </tr>
+            <tr>
+              <td><code>ss -tulnp</code></td>
+              <td>Listening sockets + PIDs</td>
+              <td>Is the server actually bound?</td>
+            </tr>
+            <tr>
+              <td><code>bridge link show</code></td>
+              <td>Bridge port membership</td>
+              <td>Are interfaces attached to bridge?</td>
+            </tr>
+            <tr>
+              <td><code>ip netns list</code></td>
+              <td>All named namespaces</td>
+              <td>Enumerate what exists</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="code-block">
+        <div class="code-header"><span class="code-lang">bash — full diagnostic sequence</span><button class="code-copy" onclick="copyCode(this)">Copy</button></div>
+        <pre><code><span class="token-comment"># 1. Check interfaces and state</span>
+ip link
+
+<span class="token-comment"># 2. Check IPs</span>
+ip addr
+
+<span class="token-comment"># 3. Check routing</span>
+ip route
+
+<span class="token-comment"># 4. Check inside namespace</span>
+sudo ip netns exec ns1 ip addr
+sudo ip netns exec ns1 ip route
+
+<span class="token-comment"># 5. Watch live traffic</span>
+sudo tcpdump -i veth0 -n</code></pre>
+      </div>
+    </div>
+
+    <!-- CH 17 -->
+    <div class="chapter" id="ch17">
+      <div class="chapter-header">
+        <span class="chapter-num">Chapter 17</span>
+        <h2>Common Failure Modes</h2>
+      </div>
+
+      <p>The same handful of mistakes account for the vast majority of veth/namespace failures. Know these patterns and you'll resolve issues in seconds.</p>
+
+      <div class="grid-2">
+        <div class="card" style="border-color: rgba(249,115,22,0.3)">
+          <h4 style="color:var(--accent4)">Interface DOWN</h4>
+          <p style="font-size:13.5px;color:var(--text2);margin-bottom:12px">Most common. Interfaces are created <code class="inline">DOWN</code> by default. Both ends must be UP.</p>
+          <div class="code-block" style="margin:0"><div class="code-header"><span class="code-lang">fix</span><button class="code-copy" onclick="copyCode(this)">Copy</button></div><pre><code>ip link set veth0 up
+ip netns exec ns1 \
+  ip link set veth1 up</code></pre></div>
+        </div>
+        <div class="card" style="border-color: rgba(249,115,22,0.3)">
+          <h4 style="color:var(--accent4)">Missing Loopback</h4>
+          <p style="font-size:13.5px;color:var(--text2);margin-bottom:12px">Namespace <code class="inline">lo</code> is DOWN by default. Apps binding to <code class="inline">127.0.0.1</code> silently fail.</p>
+          <div class="code-block" style="margin:0"><div class="code-header"><span class="code-lang">fix</span><button class="code-copy" onclick="copyCode(this)">Copy</button></div><pre><code>ip netns exec ns1 \
+  ip link set lo up</code></pre></div>
+        </div>
+        <div class="card" style="border-color: rgba(249,115,22,0.3)">
+          <h4 style="color:var(--accent4)">Subnet Mismatch</h4>
+          <p style="font-size:13.5px;color:var(--text2);margin-bottom:12px">Both endpoints must share the same subnet or you need an explicit route entry.</p>
+          <div class="code-block" style="margin:0"><div class="code-header"><span class="code-lang">bad config</span><button class="code-copy" onclick="copyCode(this)">Copy</button></div><pre><code>veth0: 192.168.1.1/24
+veth1: 192.168.2.1/24
+<span class="token-comment"># Different subnets — no route!</span></code></pre></div>
+        </div>
+        <div class="card" style="border-color: rgba(249,115,22,0.3)">
+          <h4 style="color:var(--accent4)">Missing Route</h4>
+          <p style="font-size:13.5px;color:var(--text2);margin-bottom:12px">Especially in multi-namespace setups. Verify routes exist on both sides.</p>
+          <div class="code-block" style="margin:0"><div class="code-header"><span class="code-lang">diagnose</span><button class="code-copy" onclick="copyCode(this)">Copy</button></div><pre><code>ip route
+ip netns exec ns1 ip route</code></pre></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CH 18 -->
+    <div class="chapter" id="ch18">
+      <div class="chapter-header">
+        <span class="chapter-num">Chapter 18</span>
+        <h2>Systems-Level Understanding</h2>
+      </div>
+
+      <p>At the kernel level, a veth pair is implemented as two <code class="inline">net_device</code> structures that hold a pointer to each other. When the kernel needs to "transmit" a packet out one side, it calls the veth driver's transmit function, which directly injects the packet buffer into the peer's receive queue.</p>
+
+      <div class="diagram">
+        <div class="diagram-label">Kernel-level packet path</div>
+        <pre>Application calls send()
+        │
+        ▼
+  Socket layer (TCP/UDP)
+        │
+        ▼
+  IP layer (routing, NAT, netfilter)
+        │
+        ▼
+  veth0->ndo_start_xmit()
+        │   ← this is just a function call
+        ▼
+  veth1's receive queue
+        │
+        ▼
+  netif_rx() → softirq
+        │
+        ▼
+  IP layer (in ns1)
+        │
+        ▼
+  Application recv()</pre>
+      </div>
+
+      <p>The critical insight: <strong style="color:var(--text)">the "transmission" is just a function call that moves a pointer</strong>. There is no serialization, no interrupt, no DMA transfer. This is why veth pairs achieve near-zero latency and why container networking can be so efficient.</p>
+
+      <div class="callout">
+        <strong>📖 Further Reading</strong>
+        The veth driver source is at <code class="inline">drivers/net/veth.c</code> in the Linux kernel. The key function is <code class="inline">veth_xmit()</code>. It's a remarkably short file for something so foundational.
+      </div>
+    </div>
+
+    <!-- LABS DIVIDER -->
+    <div class="section-divider">
+      <div class="section-divider-line"></div>
+      <div class="section-divider-label">Practice Labs</div>
+      <div class="section-divider-line"></div>
+    </div>
+
+    <!-- CH 19 / LABS -->
+    <div class="chapter lab-chapter" id="ch19">
+      <div class="chapter-header">
+        <span class="chapter-num">Labs 01 – 07</span>
+        <h2>Practice Labs</h2>
+      </div>
+
+      <p>The only way to truly internalize Linux networking is to build it yourself. These labs are ordered by increasing complexity. Complete each one from memory after reading the relevant chapters.</p>
+
+      <div class="lab-card">
+        <div class="lab-card-header">
+          <span class="lab-badge">Lab 01</span>
+          <span class="lab-card-title">Manual Ping Network</span>
+        </div>
+        <p class="lab-goal"><strong>Goal:</strong> Build a working veth network from scratch, entirely from memory, until a ping succeeds.</p>
+        <div class="lab-requirements">
+          Requirements:<br>
+          → Create a named namespace<br>
+          → Create a veth pair<br>
+          → Move one end into the namespace<br>
+          → Assign IPs on both sides<br>
+          → Bring all interfaces UP<br>
+          → Successfully ping across the pair
+        </div>
+      </div>
+
+      <div class="lab-card">
+        <div class="lab-card-header">
+          <span class="lab-badge">Lab 02</span>
+          <span class="lab-card-title">Python TCP Chat</span>
+        </div>
+        <p class="lab-goal"><strong>Goal:</strong> Run a TCP server on the host and a TCP client inside the namespace. Send messages in both directions.</p>
+        <div class="lab-requirements">
+          Requirements:<br>
+          → Bidirectional message exchange<br>
+          → Server on host, client in namespace<br>
+          → Handle clean disconnection<br>
+          → Bonus: add a simple protocol (length-prefixed messages)
+        </div>
+      </div>
+
+      <div class="lab-card">
+        <div class="lab-card-header">
+          <span class="lab-badge">Lab 03</span>
+          <span class="lab-card-title">Packet Sniffing</span>
+        </div>
+        <p class="lab-goal"><strong>Goal:</strong> Observe raw packet flow across the veth pair using tcpdump.</p>
+        <div class="lab-requirements">
+          Requirements:<br>
+          → Capture on veth0 during a ping<br>
+          → Identify: ARP request/reply<br>
+          → Identify: ICMP echo/reply<br>
+          → Then capture a TCP handshake (SYN, SYN-ACK, ACK)<br>
+          → Bonus: use Wireshark on a pcap file for analysis
+        </div>
+      </div>
+
+      <div class="lab-card">
+        <div class="lab-card-header">
+          <span class="lab-badge">Lab 04</span>
+          <span class="lab-card-title">Multi-Namespace LAN</span>
+        </div>
+        <p class="lab-goal"><strong>Goal:</strong> Connect multiple namespaces through a Linux bridge so they can all reach each other.</p>
+        <div class="lab-requirements">
+          Requirements:<br>
+          → Create ns1 and ns2<br>
+          → Create a bridge br0<br>
+          → Create two veth pairs, attach host ends to bridge<br>
+          → ns1 and ns2 must ping each other<br>
+          → All namespaces must ping the bridge's IP (the gateway)
+        </div>
+      </div>
+
+      <div class="lab-card">
+        <div class="lab-card-header">
+          <span class="lab-badge">Lab 05</span>
+          <span class="lab-card-title">Routing Experiment</span>
+        </div>
+        <p class="lab-goal"><strong>Goal:</strong> Route packets between two namespaces through the host acting as an IP router.</p>
+        <div class="lab-requirements">
+          Requirements:<br>
+          → Create ns1 (subnet A) and ns2 (subnet B)<br>
+          → Two separate veth pairs, different subnets<br>
+          → Enable IP forwarding on the host<br>
+          → Add static routes in each namespace pointing to the host<br>
+          → ns1 must ping ns2 through the host router
+        </div>
+        <div class="code-block" style="margin-top:12px"><div class="code-header"><span class="code-lang">bash — enable forwarding</span><button class="code-copy" onclick="copyCode(this)">Copy</button></div><pre><code>sysctl -w net.ipv4.ip_forward=1</code></pre></div>
+      </div>
+
+      <div class="lab-card">
+        <div class="lab-card-header">
+          <span class="lab-badge">Lab 06</span>
+          <span class="lab-card-title">Mini Docker Networking</span>
+        </div>
+        <p class="lab-goal"><strong>Goal:</strong> Replicate Docker's bridge network model with NAT, giving namespaces outbound internet access.</p>
+        <div class="lab-requirements">
+          Requirements:<br>
+          → Bridge with multiple namespace veth pairs<br>
+          → iptables MASQUERADE rule for outbound NAT<br>
+          → IP forwarding enabled<br>
+          → Namespaces can reach the internet via the host's public IP<br>
+          → Bonus: add port forwarding (DNAT) to expose a namespace service
+        </div>
+      </div>
+
+      <div class="lab-card">
+        <div class="lab-card-header">
+          <span class="lab-badge">Lab 07</span>
+          <span class="lab-card-title">Network Isolation Research</span>
+        </div>
+        <p class="lab-goal"><strong>Goal:</strong> Empirically verify namespace isolation properties by running services and observing what is and isn't visible across namespace boundaries.</p>
+        <div class="lab-requirements">
+          Requirements:<br>
+          → Run a web server inside ns1<br>
+          → Run a database process inside ns1<br>
+          → Run tcpdump inside ns1 — observe it only captures ns1 traffic<br>
+          → Verify the host cannot see ns1's loopback traffic<br>
+          → Document your observations about the isolation boundary
+        </div>
+      </div>
+    </div>
+
+    <!-- CH 20 -->
+    <div class="chapter" id="ch20">
+      <div class="chapter-header">
+        <span class="chapter-num">Chapter 20</span>
+        <h2>Mastery Path</h2>
+      </div>
+
+      <p>Linux networking primitives form a deep and layered skillset. Here is a structured progression from fundamentals to production-grade cloud networking expertise.</p>
+
+      <div class="mastery-path">
+        <div class="stage s1">
+          <div class="stage-num">1</div>
+          <div class="stage-info">
+            <div class="stage-title">Networking Fundamentals</div>
+            <p style="font-size:14px;color:var(--text2);margin-bottom:12px">Master the core primitives. Everything else builds on these.</p>
+            <div class="stage-tags">
+              <span class="tag">network namespaces</span>
+              <span class="tag">veth pairs</span>
+              <span class="tag">linux bridges</span>
+              <span class="tag">ip routing</span>
+              <span class="tag">ARP</span>
+            </div>
+          </div>
+        </div>
+        <div class="stage s2">
+          <div class="stage-num">2</div>
+          <div class="stage-info">
+            <div class="stage-title">Packet Filtering & NAT</div>
+            <p style="font-size:14px;color:var(--text2);margin-bottom:12px">Control how packets are allowed, transformed, and tracked.</p>
+            <div class="stage-tags">
+              <span class="tag">iptables</span>
+              <span class="tag">nftables</span>
+              <span class="tag">NAT / MASQUERADE</span>
+              <span class="tag">conntrack</span>
+              <span class="tag">DNAT / port forwarding</span>
+            </div>
+          </div>
+        </div>
+        <div class="stage s3">
+          <div class="stage-num">3</div>
+          <div class="stage-info">
+            <div class="stage-title">Overlay Networks & Tunnels</div>
+            <p style="font-size:14px;color:var(--text2);margin-bottom:12px">Extend networks across physical boundaries using encapsulation.</p>
+            <div class="stage-tags">
+              <span class="tag">VXLAN</span>
+              <span class="tag">GRE tunnels</span>
+              <span class="tag">WireGuard</span>
+              <span class="tag">IPSec</span>
+              <span class="tag">BGP</span>
+            </div>
+          </div>
+        </div>
+        <div class="stage s4">
+          <div class="stage-num">4</div>
+          <div class="stage-info">
+            <div class="stage-title">Cloud-Native Networking</div>
+            <p style="font-size:14px;color:var(--text2);margin-bottom:12px">Apply all prior knowledge to production Kubernetes and eBPF datapaths.</p>
+            <div class="stage-tags">
+              <span class="tag">Docker networking</span>
+              <span class="tag">CNI plugins</span>
+              <span class="tag">Kubernetes networking</span>
+              <span class="tag">Cilium / eBPF</span>
+              <span class="tag">service meshes</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="final-callout">
+        <h3>You Now See the Kernel</h3>
+        <p>Most engineers use containers every day without understanding the three primitives that make them work. You now know exactly what they are.</p>
+        <div class="final-pill">namespace + veth + bridge = containers</div>
+        <p style="margin-top:16px;font-size:14px;color:var(--text3)">
+          When you understand networking at this level, you stop treating it as "magic" and start seeing the exact packet path through the kernel — from <code class="inline">send()</code> to <code class="inline">recv()</code>, crossing namespaces, through bridges, and back.
+        </p>
+      </div>
+    </div>
+
+  </div><!-- /content -->
+</div><!-- /main -->
+
+<div id="scroll-top" onclick="window.scrollTo({top:0,behavior:'smooth'})">↑</div>
+
+<script>
+// ─── NAV ACTIVE STATE + PROGRESS ─────────────────────────────
+const chapters = document.querySelectorAll('.chapter');
+const navItems = document.querySelectorAll('.nav-item');
+const progressFill = document.getElementById('progress-fill');
+const readChapter = document.getElementById('read-chapter');
+const currentChapterName = document.getElementById('current-chapter-name');
+const scrollTopBtn = document.getElementById('scroll-top');
+
+// Intersection observer for active nav + fade-in
+const observer = new IntersectionObserver((entries) => {
+  entries.forEach(entry => {
+    if (entry.isIntersecting) {
+      entry.target.classList.add('visible');
+    }
+  });
+}, { threshold: 0.05 });
+
+chapters.forEach(ch => observer.observe(ch));
+
+// Scroll-based active nav
+window.addEventListener('scroll', () => {
+  const scrollY = window.scrollY;
+  const docH = document.documentElement.scrollHeight - window.innerHeight;
+  const pct = Math.min(100, Math.round((scrollY / docH) * 100));
+  progressFill.style.width = pct + '%';
+
+  // Scroll to top button
+  scrollTopBtn.classList.toggle('visible', scrollY > 400);
+
+  // Find active chapter
+  let activeIdx = 0;
+  chapters.forEach((ch, i) => {
+    const rect = ch.getBoundingClientRect();
+    if (rect.top <= 120) activeIdx = i;
+  });
+
+  navItems.forEach(item => item.classList.remove('active'));
+  if (navItems[activeIdx]) {
+    navItems[activeIdx].classList.add('active');
+    const label = navItems[activeIdx].getAttribute('data-label') || '';
+    currentChapterName.textContent = label;
+    readChapter.textContent = `Chapter ${activeIdx + 1} of ${chapters.length}`;
+
+    // Scroll nav item into view
+    const navEl = navItems[activeIdx];
+    const nav = document.getElementById('sidebar-nav');
+    const navTop = navEl.offsetTop - nav.offsetTop;
+    const navH = nav.clientHeight;
+    if (navTop < nav.scrollTop || navTop > nav.scrollTop + navH - 80) {
+      nav.scrollTo({ top: navTop - navH / 2, behavior: 'smooth' });
+    }
+  }
+});
+
+// ─── COPY BUTTON ──────────────────────────────────────────────
+function copyCode(btn) {
+  const pre = btn.closest('.code-block').querySelector('pre');
+  const text = pre.textContent;
+  navigator.clipboard.writeText(text).then(() => {
+    btn.textContent = 'Copied!';
+    btn.classList.add('copied');
+    setTimeout(() => {
+      btn.textContent = 'Copy';
+      btn.classList.remove('copied');
+    }, 1800);
+  });
+}
+
+// ─── SIDEBAR SEARCH ───────────────────────────────────────────
+const searchInput = document.getElementById('nav-search');
+searchInput.addEventListener('input', () => {
+  const q = searchInput.value.toLowerCase().trim();
+  navItems.forEach(item => {
+    const text = item.querySelector('.nav-text').textContent.toLowerCase();
+    item.style.display = (!q || text.includes(q)) ? '' : 'none';
+  });
+  document.querySelectorAll('.nav-section-label').forEach(label => {
+    label.style.display = q ? 'none' : '';
+  });
+});
+
+// ─── MOBILE SIDEBAR ───────────────────────────────────────────
+const sidebar = document.getElementById('sidebar');
+const toggle = document.getElementById('sidebar-toggle');
+const overlay = document.getElementById('overlay');
+
+toggle.addEventListener('click', () => {
+  sidebar.classList.add('open');
+  overlay.style.display = 'block';
+});
+
+overlay.addEventListener('click', () => {
+  sidebar.classList.remove('open');
+  overlay.style.display = 'none';
+});
+
+navItems.forEach(item => {
+  item.addEventListener('click', () => {
+    if (window.innerWidth <= 900) {
+      sidebar.classList.remove('open');
+      overlay.style.display = 'none';
+    }
+  });
+});
+
+// ─── INITIAL VISIBILITY ───────────────────────────────────────
+// Show first chapter immediately
+document.querySelector('.chapter').classList.add('visible');
+</script>
+</body>
+</html>
